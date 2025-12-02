@@ -1,0 +1,44 @@
+
+---
+
+# ⭐ FILE: `docker-compose.yml` (final improved version)
+
+```yaml
+version: "3.9"
+
+services:
+
+  telegram-scraper:
+    build: ./telegram-scraper
+    container_name: telegram-scraper
+    environment:
+      TELEGRAM_API_ID: "33710870"
+      TELEGRAM_API_HASH: "35b77adc0efcff4b005b1501c42ee1bc"
+      TELEGRAM_PHONE: "+96877491337"
+      TARGET_CHANNELS: "UNIVERSE CLOUD / txtbases,Slurm Logs | Free logs,cybersecurityleaks,db_leaks,breachdetector"
+      FORWARD_URL: "http://filter-engine:7000/ingest"
+    volumes:
+      - leak_files:/files
+    restart: unless-stopped
+
+  extractor-engine:
+    build: ./extractor-engine
+    container_name: extractor-engine
+    volumes:
+      - leak_files:/files
+    ports:
+      - "8001:8001"
+    restart: unless-stopped
+
+  filter-engine:
+    build: ./filter-engine
+    container_name: filter-engine
+    ports:
+      - "7000:7000"
+    environment:
+      SCOPE_DOMAIN: "squ.edu.om"
+      N8N_WEBHOOK: "https://squsecai.squ.edu.om/webhook/telegram_hits"
+    restart: unless-stopped
+
+volumes:
+  leak_files:
