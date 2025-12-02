@@ -1,0 +1,4 @@
+flask
+python-magic
+zipfile36
+pdfminer.six
