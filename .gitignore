@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+scraper.session
+*.log
+files/
+.env
