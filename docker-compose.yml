@@ -12,9 +12,9 @@ services:
     build: ./telegram-scraper
     container_name: telegram-scraper
     environment:
-      TELEGRAM_API_ID: "33710870"
-      TELEGRAM_API_HASH: "35b77adc0efcff4b005b1501c42ee1bc"
-      TELEGRAM_PHONE: "+96877491337"
+      TELEGRAM_API_ID: "${TELEGRAM_API_ID}"
+      TELEGRAM_API_HASH: "${TELEGRAM_API_HASH}"
+      TELEGRAM_PHONE: "${TELEGRAM_PHONE}"
       TARGET_CHANNELS: "UNIVERSE CLOUD / txtbases,Slurm Logs | Free logs,cybersecurityleaks,db_leaks,breachdetector"
       FORWARD_URL: "http://filter-engine:7000/ingest"
     volumes:
@@ -36,8 +36,8 @@ services:
     ports:
       - "7000:7000"
     environment:
-      SCOPE_DOMAIN: "squ.edu.om"
-      N8N_WEBHOOK: "https://squsecai.squ.edu.om/webhook/telegram_hits"
+      SCOPE_DOMAIN: "domain.com"
+      N8N_WEBHOOK: "https://n8n.yourdomain.com/webhook/ti-intel"
     restart: unless-stopped
 
 volumes:
