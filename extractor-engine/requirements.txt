@@ -1,4 +1,7 @@
 flask
 python-magic
-zipfile36
-pdfminer.six
+py7zr
+rarfile
+openpyxl
+PyPDF2
+requests
