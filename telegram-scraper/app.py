@@ -4,7 +4,8 @@ import requests
 from telethon import TelegramClient
 from config import API_ID, API_HASH, PHONE, CHANNELS, FORWARD_URL, DOWNLOAD_PATH
 
-client = TelegramClient("scraper", API_ID, API_HASH)
+SESSION_FILE = "/session_storage/scraper.session"
+client = TelegramClient(SESSION_FILE, API_ID, API_HASH)
 
 async def main():
     await client.start(PHONE)
