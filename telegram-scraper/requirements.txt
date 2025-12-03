@@ -1,3 +1,4 @@
 telethon
 requests
 python-dotenv
+python-magic
