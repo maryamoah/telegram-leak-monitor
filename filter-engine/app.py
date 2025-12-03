@@ -4,19 +4,21 @@ import os
 
 app = Flask(__name__)
 
-# Environment variables
 SCOPE = os.getenv("SCOPE_DOMAIN", "squ.edu.om").lower()
-WEBHOOK = os.getenv("N8N_WEBHOOK")  # Must be set in compose
+WEBHOOK = os.getenv("N8N_WEBHOOK")
 
 @app.route("/ingest", methods=["POST"])
 def ingest():
     data = request.get_json() or {}
     emails = data.get("emails", [])
 
-    # Match only emails belonging to SQU domain
-    matched = [e for e in emails if SCOPE in e.lower()]
+    # Normalize & clean
+    cleaned = [e.strip().lower() for e in emails]
 
-    # Forward to n8n only if there are matches AND webhook is set
+    # Match only SQU emails
+    matched = [e for e in cleaned if SCOPE in e]
+
+    # Forward to n8n only if matches present AND webhook configured
     if matched and WEBHOOK:
         try:
             requests.post(WEBHOOK, json={"matches": matched}, timeout=10)
