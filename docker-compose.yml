@@ -33,15 +33,15 @@ services:
     restart: unless-stopped
 
 
-filter-engine:
-  build: ./filter-engine
-  container_name: filter-engine
-  environment:
-    SCOPE_DOMAIN: "squ.edu.om"
-    N8N_WEBHOOK: "https://squsecai.squ.edu.om/webhook/ti-intel"
-  ports:
-    - "7000:7000"
-  restart: unless-stopped
+  filter-engine:
+    build: ./filter-engine
+    container_name: filter-engine
+    environment:
+      SCOPE_DOMAIN: "squ.edu.om"
+      N8N_WEBHOOK: "https://squsecai.squ.edu.om/webhook/ti-intel"
+    ports:
+      - "7000:7000"
+    restart: unless-stopped
 
 volumes:
   leak_files:
