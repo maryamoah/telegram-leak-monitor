@@ -1,36 +1,26 @@
-import os
-import requests
 from flask import Flask, request, jsonify
-from logger import log
+import requests
+import os
 
 app = Flask(__name__)
 
-DOMAIN = os.getenv("SCOPE_DOMAIN")
+SCOPE = os.getenv("SCOPE_DOMAIN", "squ.edu.om")
 WEBHOOK = os.getenv("N8N_WEBHOOK")
 
 @app.route("/ingest", methods=["POST"])
 def ingest():
-    filepath = request.json["filepath"]
-    
-    log(f"Processing file: {filepath}")
+    data = request.get_json()
+    emails = data.get("emails", [])
 
-    extractor = requests.post(
-        "http://extractor-engine:8001/extract",
-        json={"filepath": filepath}
-    ).json()
+    matched = [e for e in emails if SCOPE in e]
 
-    emails = extractor.get("emails", [])
-    scoped = [e for e in emails if e.endswith(DOMAIN)]
+    if matched:
+        try:
+            requests.post(WEBHOOK, json={"matches": matched})
+        except:
+            pass
 
-    if scoped:
-        log(f"[!] Leak detected: {scoped}")
-        requests.post(WEBHOOK, json={
-            "file": filepath,
-            "emails": scoped
-        })
-    else:
-        log("No relevant emails found.")
+    return jsonify({"matches": matched}), 200
 
-    return jsonify({"status": "ok"})
-
-app.run(host="0.0.0.0", port=7000)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=7000)
