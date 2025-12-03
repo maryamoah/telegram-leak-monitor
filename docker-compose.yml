@@ -1,4 +1,3 @@
-
 version: "3.9"
 
 services:
@@ -9,37 +8,43 @@ services:
     volumes:
       - leak_files:/files
     environment:
-      TELEGRAM_API_ID: "${TELEGRAM_API_ID}"
-      TELEGRAM_API_HASH: "${TELEGRAM_API_HASH}"
-      TELEGRAM_PHONE: "${TELEGRAM_PHONE}"
-      TARGET_CHANNELS: |
-        UNIVERSE CLOUD / txtbases,
-        Slurm Logs || Free logs,
-        cybersecurityleaks,
-        db_leaks,
-        breachdetector
-      FORWARD_URL: "http://filter-engine:7000/ingest"  
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH}
+      TELEGRAM_PHONE: ${TELEGRAM_PHONE}
+
+      # VALID TELEGRAM CHANNELS ONLY
+      TARGET_CHANNELS: "universecloudtxt,https://t.me/+d3feCXKJGYE4MDgy,https://t.me/+U843WkgFogBjZDI1"
+
+      # Where scraper sends file/text data
+      FORWARD_URL: "http://extractor-engine:8001/ingest"
+
     restart: unless-stopped
+
 
   extractor-engine:
     build: ./extractor-engine
     container_name: extractor-engine
     volumes:
       - leak_files:/files
+    environment:
+      # Optional future use
+      MAX_READ_BYTES: 5000000
     ports:
       - "8001:8001"
     restart: unless-stopped
 
+
   filter-engine:
     build: ./filter-engine
     container_name: filter-engine
-    environment:
-      SCOPE_DOMAIN: "yourdomain.com"
-      SCOPE_EMAIL: "yourdomain.comm"
-      N8N_WEBHOOK: "${N8N_WEBHOOK}"
     ports:
       - "7000:7000"
+    environment:
+      SCOPE_DOMAIN: "squ.edu.om"
+      SCOPE_EMAIL: "@squ.edu.om"
+      N8N_WEBHOOK: ${N8N_WEBHOOK}
     restart: unless-stopped
+
 
 volumes:
   leak_files:
