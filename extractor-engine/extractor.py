@@ -1,53 +1,87 @@
-import os
-import re
-import json
-import csv
-import zipfile
-from pdfminer.high_level import extract_text
+import os, re, zipfile, subprocess
+from pathlib import Path
+import py7zr, rarfile
+from PyPDF2 import PdfReader
 
-EMAIL_REGEX = r"[a-zA-Z0-9._%+-]+@([a-zA-Z0-9.-]+)"
+EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@squ\.edu\.om", re.I)
 
-def extract_from_file(path):
-    hits = []
+def read_head(path, max_bytes=5000000):
+    try:
+        with open(path, "rb") as f:
+            return f.read(max_bytes).decode(errors="ignore")
+    except:
+        return ""
 
-    if path.endswith(".zip"):
-        with zipfile.ZipFile(path, 'r') as z:
-            for f in z.namelist():
+def extract_txt(path):
+    return read_head(path)
+
+def extract_pdf(path):
+    try:
+        reader = PdfReader(path)
+        text = ""
+        for p in reader.pages:
+            text += p.extract_text() or ""
+        return text
+    except:
+        return ""
+
+def extract_zip(path):
+    text = ""
+    try:
+        with zipfile.ZipFile(path) as z:
+            for name in z.namelist():
                 try:
-                    content = z.read(f).decode(errors="ignore")
-                    hits += re.findall(EMAIL_REGEX, content)
+                    text += z.read(name).decode(errors="ignore")
                 except:
                     pass
+        return text
+    except:
+        return ""
 
-    elif path.endswith(".txt"):
-        with open(path, "r", errors="ignore") as f:
-            hits += re.findall(EMAIL_REGEX, f.read())
+def extract_rar(path):
+    text = ""
+    try:
+        rf = rarfile.RarFile(path)
+        for f in rf.infolist():
+            try:
+                text += rf.read(f).decode(errors="ignore")
+            except:
+                pass
+        return text
+    except:
+        return ""
 
-    elif path.endswith(".json"):
-        try:
-            data = json.load(open(path))
-            hits += re.findall(EMAIL_REGEX, str(data))
-        except:
-            pass
+def extract_7z(path):
+    text = ""
+    try:
+        with py7zr.SevenZipFile(path, "r") as z:
+            files = z.readall()
+            for name, file in files.items():
+                try:
+                    text += file.read().decode(errors="ignore")
+                except:
+                    pass
+        return text
+    except:
+        return ""
 
-    elif path.endswith(".csv"):
-        with open(path, newline='', errors="ignore") as f:
-            for row in csv.reader(f):
-                hits += re.findall(EMAIL_REGEX, ",".join(row))
+def extract_all(path):
+    lower = path.lower()
 
-    elif path.endswith(".pdf"):
-        try:
-            text = extract_text(path)
-            hits += re.findall(EMAIL_REGEX, text)
-        except:
-            pass
-
+    if lower.endswith(".txt") or lower.endswith(".csv") or lower.endswith(".log"):
+        return extract_txt(path)
+    elif lower.endswith(".pdf"):
+        return extract_pdf(path)
+    elif lower.endswith(".zip"):
+        return extract_zip(path)
+    elif lower.endswith(".rar"):
+        return extract_rar(path)
+    elif lower.endswith(".7z"):
+        return extract_7z(path)
     else:
-        # fallback: scan raw bytes
+        # fallback to strings
         try:
-            raw = open(path, "rb").read().decode(errors="ignore")
-            hits += re.findall(EMAIL_REGEX, raw)
+            out = subprocess.check_output(["strings", path], timeout=20)
+            return out.decode(errors="ignore")
         except:
-            pass
-
-    return list(set(hits))
+            return read_head(path)
