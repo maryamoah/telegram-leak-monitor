@@ -1,9 +1,4 @@
 
----
-
-# ⭐ FILE: `docker-compose.yml` (final improved version)
-
-```yaml
 version: "3.9"
 
 services:
@@ -11,14 +6,19 @@ services:
   telegram-scraper:
     build: ./telegram-scraper
     container_name: telegram-scraper
+    volumes:
+      - leak_files:/files
     environment:
       TELEGRAM_API_ID: "${TELEGRAM_API_ID}"
       TELEGRAM_API_HASH: "${TELEGRAM_API_HASH}"
       TELEGRAM_PHONE: "${TELEGRAM_PHONE}"
-      TARGET_CHANNELS: "UNIVERSE CLOUD / txtbases,Slurm Logs | Free logs,cybersecurityleaks,db_leaks,breachdetector"
+      TARGET_CHANNELS: |
+        UNIVERSE CLOUD / txtbases,
+        Slurm Logs || Free logs,
+        cybersecurityleaks,
+        db_leaks,
+        breachdetector
       FORWARD_URL: "http://filter-engine:7000/ingest"
-    volumes:
-      - leak_files:/files
     restart: unless-stopped
 
   extractor-engine:
@@ -33,11 +33,12 @@ services:
   filter-engine:
     build: ./filter-engine
     container_name: filter-engine
+    environment:
+      SCOPE_DOMAIN: "yourdomain.com"
+      SCOPE_EMAIL: "yourdomain.comm"
+      N8N_WEBHOOK: "${N8N_WEBHOOK}"
     ports:
       - "7000:7000"
-    environment:
-      SCOPE_DOMAIN: "domain.com"
-      N8N_WEBHOOK: "https://n8n.yourdomain.com/webhook/ti-intel"
     restart: unless-stopped
 
 volumes:
