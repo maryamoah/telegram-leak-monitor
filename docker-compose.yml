@@ -19,7 +19,6 @@ services:
         db_leaks,
         breachdetector
       FORWARD_URL: "http://filter-engine:7000/ingest"  
-    command: ["sleep", "infinity"]
     restart: unless-stopped
 
   extractor-engine:
