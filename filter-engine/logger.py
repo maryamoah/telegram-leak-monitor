@@ -1,4 +1,2 @@
-import datetime
-
-def log(msg):
-    print(f"[{datetime.datetime.now()}] {msg}", flush=True)
+def log(message):
+    print(message, flush=True)
