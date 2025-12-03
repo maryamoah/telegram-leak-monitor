@@ -7,16 +7,18 @@ services:
     container_name: telegram-scraper
     volumes:
       - leak_files:/files
+      - telegram_session:/root/.local/share/telethon      # <-- session persists here!
     environment:
       TELEGRAM_API_ID: ${TELEGRAM_API_ID}
       TELEGRAM_API_HASH: ${TELEGRAM_API_HASH}
       TELEGRAM_PHONE: ${TELEGRAM_PHONE}
 
-      # VALID TELEGRAM CHANNELS ONLY
+      # VALID TELEGRAM CHANNELS ONLY (comma-separated)
       TARGET_CHANNELS: "universecloudtxt,https://t.me/+d3feCXKJGYE4MDgy,https://t.me/+U843WkgFogBjZDI1"
 
-      # Where scraper sends file/text data
+      # scraper -> extractor
       FORWARD_URL: "http://extractor-engine:8001/ingest"
+
     restart: unless-stopped
 
 
@@ -26,7 +28,6 @@ services:
     volumes:
       - leak_files:/files
     environment:
-      # Optional future use
       MAX_READ_BYTES: 5000000
     ports:
       - "8001:8001"
@@ -36,14 +37,14 @@ services:
   filter-engine:
     build: ./filter-engine
     container_name: filter-engine
-    ports:
-      - "7000:7000"
     environment:
       SCOPE_DOMAIN: "squ.edu.om"
       SCOPE_EMAIL: "@squ.edu.om"
       N8N_WEBHOOK: ${N8N_WEBHOOK}
+    ports:
+      - "7000:7000"
     restart: unless-stopped
-
 
 volumes:
   leak_files:
+  telegram_session:
