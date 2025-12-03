@@ -17,7 +17,6 @@ services:
 
       # Where scraper sends file/text data
       FORWARD_URL: "http://extractor-engine:8001/ingest"
-    command: ["sleep", "infinity"]
     restart: unless-stopped
 
 
