@@ -21,7 +21,7 @@ services:
 
     # 🔥 This ensures scraper only runs AFTER session file becomes available 
     #    and prevents "database is locked"
-    command: ["sleep", "infinity"]
+    # command removed command: ["sleep", "infinity"]
     restart: unless-stopped
 
 
