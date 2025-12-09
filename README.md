@@ -248,5 +248,5 @@ Delete Slack node → save → add new Slack node.
 
 ## Author
 
-Automated SOC Intelligence Pipeline  
+Mary Amoah  
 Developed for academic cybersecurity monitoring.
