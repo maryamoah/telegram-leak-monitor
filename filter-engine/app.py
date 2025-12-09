@@ -1,47 +1,59 @@
+from flask import Flask, request, jsonify
 import os
 import requests
-from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-# Load environment variables
-SCOPE_DOMAIN = os.getenv("SCOPE_DOMAIN", "").lower().strip()
-SCOPE_EMAIL = os.getenv("SCOPE_EMAIL", "").lower().strip()
-WEBHOOK = os.getenv("N8N_WEBHOOK", "").strip()
+# Environment
+SCOPE_DOMAIN = (os.getenv("SCOPE_DOMAIN", "") or "").lower()
+SCOPE_EMAIL = (os.getenv("SCOPE_EMAIL", "") or "").lower()
+WEBHOOK = os.getenv("N8N_WEBHOOK")
 
-def email_matches_scope(email: str) -> bool:
-    email = email.lower()
+print("=== Filter engine starting ===", flush=True)
+print(f"SCOPE_DOMAIN = {SCOPE_DOMAIN!r}", flush=True)
+print(f"SCOPE_EMAIL  = {SCOPE_EMAIL!r}", flush=True)
+print(f"N8N_WEBHOOK  = {WEBHOOK!r}", flush=True)
 
-    # Highest priority: explicit email suffix, e.g. "@squ.edu.om"
-    if SCOPE_EMAIL and email.endswith(SCOPE_EMAIL):
-        return True
 
-    # Domain match: e.g. "squ.edu.om" should match "user@squ.edu.om"
-    if SCOPE_DOMAIN and SCOPE_DOMAIN in email:
-        return True
-
-    return False
+@app.route("/health", methods=["GET"])
+def health():
+    return "ok", 200
 
 
 @app.route("/ingest", methods=["POST"])
 def ingest():
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
+    emails = data.get("emails") or []
 
-    emails = data.get("emails", [])
-    if not isinstance(emails, list):
-        emails = [emails]
+    # Normalise
+    cleaned = []
+    for e in emails:
+        if not e:
+            continue
+        cleaned.append(str(e).strip().lower())
 
-    print("\nIncoming emails:", emails)
+    # Match against scope
+    matched = []
+    for e in cleaned:
+        if SCOPE_EMAIL and SCOPE_EMAIL in e:
+            matched.append(e)
+        elif SCOPE_DOMAIN and e.endswith("@" + SCOPE_DOMAIN):
+            matched.append(e)
 
-    matched = [email for email in emails if email_matches_scope(email)]
+    # De-duplicate
+    unique = sorted(set(matched))
 
-    print("Matched:", matched)
-
-    if matched and WEBHOOK:
-        print("Forwarded to n8n:", matched)
+    # Forward to n8n if any
+    if unique and WEBHOOK:
         try:
-            requests.post(WEBHOOK, json={"matches": matched})
-        except Exception as e:
-            print("Webhook error:", e)
+            resp = requests.post(WEBHOOK, json={"matches": unique}, timeout=10)
+            print(f"Forwarded to n8n: {unique} (status {resp.status_code})", flush=True)
+        except Exception as exc:
+            print(f"[ERROR] Failed to send to n8n: {exc}", flush=True)
 
-    return jsonify({"new_leaks": matched})
+    return jsonify({"new_leaks": unique}), 200
+
+
+if __name__ == "__main__":
+    print("Starting Flask on 0.0.0.0:7000", flush=True)
+    app.run(host="0.0.0.0", port=7000)
