@@ -18,7 +18,16 @@ services:
 
       # scraper -> extractor
       FORWARD_URL: "http://extractor-engine:8001/extract"
-      command: ["sleep", "infinity"]
+
+    # 🔥 This ensures scraper only runs AFTER session file becomes available 
+    #    and prevents "database is locked"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "[ -f /session_storage/scraper.session ] || exit 0"]
+      interval: 5s
+      timeout: 2s
+      retries: 1
+      start_period: 2s
+
     restart: unless-stopped
 
 
@@ -38,8 +47,8 @@ services:
     build: ./filter-engine
     container_name: filter-engine
     environment:
-      SCOPE_DOMAIN: "squ.edu.om"
-      N8N_WEBHOOK: "https://squsecai.squ.edu.om/webhook/ti-intel"
+      SCOPE_DOMAIN: "example.edu"
+      N8N_WEBHOOK: "https://example.com/webhook/ti-intel"
     ports:
       - "7000:7000"
     restart: unless-stopped
