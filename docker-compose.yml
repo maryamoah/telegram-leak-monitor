@@ -35,14 +35,13 @@ services:
     restart: unless-stopped
 
 
-  filter-engine:
+    filter-engine:
     build: ./filter-engine
     container_name: filter-engine
-    volumes:
-      - filter_store:/store         # <-- REQUIRED for duplicate filtering
     environment:
-      SCOPE_DOMAIN: "example.edu"   # <-- your domain
-      N8N_WEBHOOK: "https://example.com/webhook/ti-intel"
+      SCOPE_DOMAIN: ${SCOPE_DOMAIN}
+      SCOPE_EMAIL: ${SCOPE_EMAIL}
+      N8N_WEBHOOK: ${N8N_WEBHOOK}
     ports:
       - "7000:7000"
     restart: unless-stopped
