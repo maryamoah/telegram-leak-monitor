@@ -35,3 +35,9 @@ async def start_scraper():
 with client:
     client.loop.run_until_complete(start_scraper())
     
+if __name__ == "__main__":
+    import time
+    print("Scraper container started. Waiting...")
+    while True:
+        time.sleep(10)
+    
