@@ -14,7 +14,7 @@ services:
       TELEGRAM_PHONE: ${TELEGRAM_PHONE}
 
       # VALID TELEGRAM CHANNELS ONLY (comma-separated)
-      TARGET_CHANNELS: "universecloudtxt,https://t.me/+d3feCXKJGYE4MDgy,https://t.me/+U843WkgFogBjZDI1"
+      TARGET_CHANNELS: ${TARGET_CHANNELS}
 
       # scraper -> extractor
       FORWARD_URL: "http://extractor-engine:8001/extract"
