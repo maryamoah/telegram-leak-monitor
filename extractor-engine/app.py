@@ -1,9 +1,11 @@
 from flask import Flask, request, jsonify
 import requests
-from extractor import extract_emails
+import os
+from extractor import extract_all, EMAIL_RE
 
 app = Flask(__name__)
 
+# Where to send extracted emails
 FILTER_ENDPOINT = "http://filter-engine:7000/ingest"
 
 
@@ -12,17 +14,25 @@ def extract():
     data = request.get_json() or {}
     path = data.get("filepath")
 
-    if not path or not str(path).startswith("/files"):
+    if not path or not path.startswith("/files"):
         return jsonify({"error": "Invalid file path"}), 400
 
-    emails = extract_emails(path)
-    result = {"emails": emails}
+    # Extract text & emails from file
+    text = extract_all(path)
+    emails = EMAIL_RE.findall(text)
 
-    # Send to filter-engine (best-effort)
-    try:
-        requests.post(FILTER_ENDPOINT, json=result, timeout=10)
-    except Exception:
-        pass
+    result = {
+        "filepath": path,
+        "emails": emails,
+    }
+
+    # Forward full email list (for this file) to filter-engine
+    if emails:
+        try:
+            resp = requests.post(FILTER_ENDPOINT, json=result, timeout=10)
+            print(f"[extractor] Forwarded {len(emails)} emails from {path} -> filter (status {resp.status_code})")
+        except Exception as e:
+            print("[extractor] Failed to forward to filter-engine:", e)
 
     return jsonify(result), 200
 
