@@ -19,7 +19,6 @@ services:
       # scraper -> extractor
       FORWARD_URL: "http://extractor-engine:8001/extract"
 
-      FILTER_URL: "http://filter-engine:7000/ingest"
 
     # Scraper starts normally (no sleep hack) # command removed command: ["sleep", "infinity"]
     restart: unless-stopped
