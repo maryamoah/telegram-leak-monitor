@@ -24,9 +24,10 @@ def health():
 def ingest():
     data = request.get_json(silent=True) or {}
 
-    # Extract file source (optional)
+    # Extract emails + credentials if present
     source = data.get("filepath")
     emails = data.get("emails") or []
+    creds = data.get("creds") or []   # <-- NEW
 
     # Normalise emails
     cleaned = [
@@ -45,12 +46,15 @@ def ingest():
 
     unique = sorted(set(matched))
 
-    # Build final JSON payload to n8n
+    # Build final JSON payload for n8n
     payload = {"matches": unique}
     if source:
-        payload["source"] = source  # optional path for grouping (Option A)
+        payload["source"] = source
 
-    # Forward grouped results to n8n (Option A)
+    if creds:
+        payload["creds"] = creds   # <-- NEW (Forward credentials!)
+
+    # Forward if any match
     if unique and WEBHOOK:
         try:
             resp = requests.post(WEBHOOK, json=payload, timeout=10)
