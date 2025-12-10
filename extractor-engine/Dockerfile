@@ -9,3 +9,4 @@ COPY app.py .
 COPY extractor.py .
 
 CMD ["python", "app.py"]
+
