@@ -4,7 +4,7 @@ import requests
 
 app = Flask(__name__)
 
-# Environment
+# Environment variables (public safe — no hardcoded domains)
 SCOPE_DOMAIN = (os.getenv("SCOPE_DOMAIN", "") or "").lower()
 SCOPE_EMAIL = (os.getenv("SCOPE_EMAIL", "") or "").lower()
 WEBHOOK = os.getenv("N8N_WEBHOOK")
@@ -23,16 +23,19 @@ def health():
 @app.route("/ingest", methods=["POST"])
 def ingest():
     data = request.get_json(silent=True) or {}
+
+    # Extract file source (optional)
+    source = data.get("filepath")
     emails = data.get("emails") or []
 
-    # Normalise
-    cleaned = []
-    for e in emails:
-        if not e:
-            continue
-        cleaned.append(str(e).strip().lower())
+    # Normalise emails
+    cleaned = [
+        str(e).strip().lower()
+        for e in emails
+        if isinstance(e, str) and e.strip()
+    ]
 
-    # Match against scope
+    # Apply domain/email filtering
     matched = []
     for e in cleaned:
         if SCOPE_EMAIL and SCOPE_EMAIL in e:
@@ -40,18 +43,22 @@ def ingest():
         elif SCOPE_DOMAIN and e.endswith("@" + SCOPE_DOMAIN):
             matched.append(e)
 
-    # De-duplicate
     unique = sorted(set(matched))
 
-    # Forward to n8n if any
+    # Build final JSON payload to n8n
+    payload = {"matches": unique}
+    if source:
+        payload["source"] = source  # optional path for grouping (Option A)
+
+    # Forward grouped results to n8n (Option A)
     if unique and WEBHOOK:
         try:
-            resp = requests.post(WEBHOOK, json={"matches": unique}, timeout=10)
-            print(f"Forwarded to n8n: {unique} (status {resp.status_code})", flush=True)
+            resp = requests.post(WEBHOOK, json=payload, timeout=10)
+            print(f"Forwarded to n8n: {payload} (status {resp.status_code})", flush=True)
         except Exception as exc:
             print(f"[ERROR] Failed to send to n8n: {exc}", flush=True)
 
-    return jsonify({"new_leaks": unique}), 200
+    return jsonify(payload), 200
 
 
 if __name__ == "__main__":
