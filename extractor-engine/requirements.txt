@@ -1,8 +1,5 @@
 flask
-python-magic
+requests
 py7zr
 rarfile
-openpyxl
 PyPDF2
-pdfminer.six
-requests
