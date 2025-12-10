@@ -1,38 +1,58 @@
 from flask import Flask, request, jsonify
-import requests
 import os
-from extractor import extract_all, EMAIL_RE
+
+from extractor import extract_all
+
+MAX_BYTES = int(os.getenv("MAX_READ_BYTES", "5000000"))
 
 app = Flask(__name__)
 
-# Where to send extracted emails
+# extractor → filter-engine
 FILTER_ENDPOINT = "http://filter-engine:7000/ingest"
 
 
 @app.route("/extract", methods=["POST"])
 def extract():
-    data = request.get_json() or {}
-    path = data.get("filepath")
+    data = request.get_json(silent=True) or {}
 
-    if not path or not path.startswith("/files"):
-        return jsonify({"error": "Invalid file path"}), 400
+    filepath = data.get("filepath")
+    text = data.get("text")
 
-    # Extract text & emails from file
-    text = extract_all(path)
-    emails = EMAIL_RE.findall(text)
+    # --- Case 1: File path provided ---
+    if filepath:
+        if not filepath.startswith("/files"):
+            return jsonify({"error": "Invalid file path"}), 400
 
-    result = {
-        "filepath": path,
-        "emails": emails,
-    }
-
-    # Forward full email list (for this file) to filter-engine
-    if emails:
         try:
-            resp = requests.post(FILTER_ENDPOINT, json=result, timeout=10)
-            print(f"[extractor] Forwarded {len(emails)} emails from {path} -> filter (status {resp.status_code})")
+            with open(filepath, "rb") as f:
+                raw = f.read(MAX_BYTES)
+            content = raw.decode("utf-8", errors="ignore")
         except Exception as e:
-            print("[extractor] Failed to forward to filter-engine:", e)
+            return jsonify({"error": str(e)}), 500
+
+    # --- Case 2: Raw text message from scraper ---
+    elif text:
+        content = text
+
+    else:
+        return jsonify({"error": "No text or filepath provided"}), 400
+
+    # Extract emails + credentials
+    result = extract_all(content)
+    emails = result.get("emails", [])
+
+    # Forward only emails to filter-engine
+    if emails:
+        import requests
+        try:
+            resp = requests.post(
+                FILTER_ENDPOINT,
+                json={"emails": emails},
+                timeout=10
+            )
+            print(f"[extractor] Forwarded {emails} → filter (status {resp.status_code})")
+        except Exception as e:
+            print("[extractor] Forward failed:", e)
 
     return jsonify(result), 200
 
