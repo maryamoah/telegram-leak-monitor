@@ -1,7 +1,6 @@
 from flask import Flask, request, jsonify
 import os
-import requests
-from extractor import extract_all
+from extractor import extract_emails
 
 app = Flask(__name__)
 
@@ -12,26 +11,25 @@ FILTER_ENDPOINT = "http://filter-engine:7000/ingest"
 def extract():
     data = request.get_json() or {}
     path = data.get("filepath")
-    text_input = data.get("text")
 
-    # Case 1: Text supplied directly from scraper
-    if text_input:
-        result = extract_all_from_text(text_input)
-        requests.post(FILTER_ENDPOINT, json={"emails": result["emails"]})
-        return jsonify(result), 200
-
-    # Case 2: File supplied
-    if not path or not path.startswith("/files"):
+    if not path or not os.path.exists(path):
         return jsonify({"error": "Invalid file path"}), 400
 
-    result = extract_all(path)
+    # NEW: call upgraded extractor
+    emails = extract_emails(path)
 
-    # Forward to filter
-    if result["emails"] or result["creds"]:
-        try:
-            requests.post(FILTER_ENDPOINT, json=result, timeout=10)
-        except Exception as e:
-            print("[extractor] forwarding failed:", e)
+    result = {
+        "filepath": path,
+        "emails": emails,
+    }
+
+    # Forward full email list to filter-engine
+    try:
+        import requests
+        resp = requests.post(FILTER_ENDPOINT, json=result, timeout=10)
+        print(f"[extractor] forwarded {len(emails)} emails from {path} → filter (status {resp.status_code})")
+    except Exception as e:
+        print("[extractor] ERROR forwarding to filter:", e)
 
     return jsonify(result), 200
 
