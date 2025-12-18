@@ -4,22 +4,16 @@ import zipfile
 import py7zr
 import rarfile
 from PyPDF2 import PdfReader
-from pathlib import Path
 
-# ============================================
-# EMAIL extraction (bytes regex)
-# ============================================
+# =========================================================
+# REGEX DEFINITIONS (bytes-safe)
+# =========================================================
+
 EMAIL_RE = re.compile(
     rb"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
     re.IGNORECASE
 )
 
-# ============================================
-# PASSWORD dump format:
-#   email:password
-#   email,password
-#   email|password
-# ============================================
 CRED_RE = re.compile(
     rb"(?P<user>[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})"
     rb"(?P<sep>[:|,;])"
@@ -27,16 +21,11 @@ CRED_RE = re.compile(
     re.IGNORECASE
 )
 
-
-def safe_decode(data: bytes) -> str:
-    """Safely decode bytes → string."""
-    return data.decode(errors="ignore") if isinstance(data, bytes) else ""
-
-
-# ========== FILE TYPE READERS ==========
+# =========================================================
+# FILE READERS (binary-safe)
+# =========================================================
 
 def read_raw(path: str, limit: int = 10_000_000) -> bytes:
-    """Read first N bytes of file."""
     try:
         with open(path, "rb") as f:
             return f.read(limit)
@@ -45,12 +34,11 @@ def read_raw(path: str, limit: int = 10_000_000) -> bytes:
 
 
 def read_pdf(path: str) -> bytes:
-    text = ""
     try:
         reader = PdfReader(path)
+        text = ""
         for page in reader.pages:
-            t = page.extract_text() or ""
-            text += t
+            text += page.extract_text() or ""
         return text.encode(errors="ignore")
     except Exception:
         return b""
@@ -65,9 +53,9 @@ def read_zip(path: str) -> bytes:
                     buf += z.read(name)
                 except Exception:
                     pass
-        return buf
     except Exception:
-        return b""
+        pass
+    return buf
 
 
 def read_rar(path: str) -> bytes:
@@ -79,9 +67,9 @@ def read_rar(path: str) -> bytes:
                     buf += rf.read(entry)
                 except Exception:
                     pass
-        return buf
     except Exception:
-        return b""
+        pass
+    return buf
 
 
 def read_7z(path: str) -> bytes:
@@ -94,33 +82,71 @@ def read_7z(path: str) -> bytes:
                     buf += f.read()
                 except Exception:
                     pass
-        return buf
     except Exception:
-        return b""
+        pass
+    return buf
 
-
-# ========== MAIN EXTRACTION ==========
+# =========================================================
+# CORE EXTRACTION LOGIC
+# =========================================================
 
 def extract_all(raw: bytes) -> dict:
-    """Extract emails + credential pairs from raw bytes."""
+    """
+    Extract:
+      - emails
+      - credential pairs (email + password)
+    """
 
     if not isinstance(raw, (bytes, bytearray)):
         raw = b""
 
-    text = raw
-
-    # 1 — Extract emails
-    emails = {e.decode(errors="ignore") for e in EMAIL_RE.findall(text)}
-
-    # 2 — Extract credential pairs
+    emails = set()
     creds = []
-    for m in CRED_RE.finditer(text):
+
+    # --- Emails ---
+    for e in EMAIL_RE.findall(raw):
+        emails.add(e.decode(errors="ignore"))
+
+    # --- Credentials ---
+    for m in CRED_RE.finditer(raw):
         email = m.group("user").decode(errors="ignore")
-        pw = m.group("pw").decode(errors="ignore")
-        creds.append({"email": email, "password": pw})
+        password = m.group("pw").decode(errors="ignore")
+
+        creds.append({
+            "email": email,
+            "password": password
+        })
+
         emails.add(email)
 
     return {
         "emails": sorted(emails),
         "creds": creds
     }
+
+# =========================================================
+# PUBLIC ENTRYPOINT (EXPECTED BY app.py)
+# =========================================================
+
+def extract_emails(path: str) -> dict:
+    """
+    Entry point used by extractor-engine/app.py
+    """
+
+    if not path or not os.path.exists(path):
+        return {"emails": [], "creds": []}
+
+    lower = path.lower()
+
+    if lower.endswith(".pdf"):
+        raw = read_pdf(path)
+    elif lower.endswith(".zip"):
+        raw = read_zip(path)
+    elif lower.endswith(".rar"):
+        raw = read_rar(path)
+    elif lower.endswith(".7z"):
+        raw = read_7z(path)
+    else:
+        raw = read_raw(path)
+
+    return extract_all(raw)
