@@ -4,3 +4,9 @@ scraper.session
 *.log
 files/
 .env
+# Runtime files
+files/
+*.log
+.alerted_creds.json
+.env
+
