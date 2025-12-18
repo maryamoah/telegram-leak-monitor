@@ -4,15 +4,15 @@ import requests
 
 app = Flask(__name__)
 
-# Environment variables (public safe — no hardcoded domains)
+# Environment variables (public-safe)
 SCOPE_DOMAIN = (os.getenv("SCOPE_DOMAIN", "") or "").lower()
-SCOPE_EMAIL = (os.getenv("SCOPE_EMAIL", "") or "").lower()
-WEBHOOK = os.getenv("N8N_WEBHOOK")
+SCOPE_EMAIL  = (os.getenv("SCOPE_EMAIL", "") or "").lower()
+WEBHOOK      = os.getenv("N8N_WEBHOOK")
 
 print("=== Filter engine starting ===", flush=True)
 print(f"SCOPE_DOMAIN = {SCOPE_DOMAIN!r}", flush=True)
 print(f"SCOPE_EMAIL  = {SCOPE_EMAIL!r}", flush=True)
-print(f"N8N_WEBHOOK  = {WEBHOOK!r}", flush=True)
+print(f"N8N_WEBHOOK  = {'set' if WEBHOOK else 'not set'}", flush=True)
 
 
 @app.route("/health", methods=["GET"])
@@ -24,41 +24,61 @@ def health():
 def ingest():
     data = request.get_json(silent=True) or {}
 
-    # Extract emails + credentials if present
     source = data.get("filepath")
     emails = data.get("emails") or []
-    creds = data.get("creds") or []   # <-- NEW
+    creds  = data.get("creds") or []
 
-    # Normalise emails
-    cleaned = [
+    # --- normalize emails ---
+    cleaned_emails = [
         str(e).strip().lower()
         for e in emails
         if isinstance(e, str) and e.strip()
     ]
 
-    # Apply domain/email filtering
-    matched = []
-    for e in cleaned:
+    # --- email-level filtering ---
+    matched_emails = []
+    for e in cleaned_emails:
         if SCOPE_EMAIL and SCOPE_EMAIL in e:
-            matched.append(e)
+            matched_emails.append(e)
         elif SCOPE_DOMAIN and e.endswith("@" + SCOPE_DOMAIN):
-            matched.append(e)
+            matched_emails.append(e)
 
-    unique = sorted(set(matched))
+    matched_emails = sorted(set(matched_emails))
 
-    # Build final JSON payload for n8n
-    payload = {"matches": unique}
+    # --- credential-level filtering (CRITICAL) ---
+    matched_creds = []
+    for c in creds:
+        email = str(c.get("email", "")).lower().strip()
+        if not email:
+            continue
+
+        if SCOPE_EMAIL and SCOPE_EMAIL in email:
+            matched_creds.append(c)
+        elif SCOPE_DOMAIN and email.endswith("@" + SCOPE_DOMAIN):
+            matched_creds.append(c)
+
+    # --- build payload (SAFE) ---
+    payload = {
+        "matches": matched_emails,
+        "count": len(matched_emails),
+    }
+
     if source:
         payload["source"] = source
 
-    if creds:
-        payload["creds"] = creds   # <-- NEW (Forward credentials!)
+    if matched_creds:
+        # ⚠️ forward only matched creds, never all
+        payload["creds"] = matched_creds
 
-    # Forward if any match
-    if unique and WEBHOOK:
+    # --- forward only if something matched ---
+    if matched_emails and WEBHOOK:
         try:
             resp = requests.post(WEBHOOK, json=payload, timeout=10)
-            print(f"Forwarded to n8n: {payload} (status {resp.status_code})", flush=True)
+            print(
+                f"[INFO] Forwarded {len(matched_emails)} match(es) "
+                f"from {source} (status {resp.status_code})",
+                flush=True,
+            )
         except Exception as exc:
             print(f"[ERROR] Failed to send to n8n: {exc}", flush=True)
 
