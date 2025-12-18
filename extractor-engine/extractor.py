@@ -6,13 +6,11 @@ import rarfile
 from PyPDF2 import PdfReader
 
 # =========================================================
-# CONFIG (PUBLIC-SAFE)
+# CONFIG (PUBLIC SAFE)
 # =========================================================
 
-# Domain is injected at runtime, NOT hard-coded
 TARGET_DOMAIN = os.getenv("TARGET_DOMAIN", "").strip().lower()
 
-# Fail closed if not configured
 if TARGET_DOMAIN:
     TARGET_DOMAIN_BYTES = f"@{TARGET_DOMAIN}".encode()
 else:
@@ -48,7 +46,21 @@ URL_CRED_RE = re.compile(
 # FILE READERS
 # =========================================================
 
+def read_raw(path: str, limit: int = 10_000_000) -> bytes:
+    """
+    Legacy compatibility function.
+    Kept so extractor-engine/app.py imports do not break.
+    NOT used for large text processing.
+    """
+    try:
+        with open(path, "rb") as f:
+            return f.read(limit)
+    except Exception:
+        return b""
+
+
 def read_raw_stream(path: str):
+    """Stream large text files safely"""
     try:
         with open(path, "rb") as f:
             while True:
@@ -118,6 +130,7 @@ def read_7z(path: str) -> bytes:
 # =========================================================
 
 def extract_all(raw: bytes) -> list:
+    """Extract (email, password) tuples from raw bytes"""
     if not isinstance(raw, (bytes, bytearray)):
         return []
 
@@ -144,10 +157,10 @@ def extract_all(raw: bytes) -> list:
 def extract_emails(path: str) -> dict:
     """
     Domain-gated, streaming-safe extractor.
-    Public-repo safe (no hard-coded org info).
+    Public GitHub safe (no hard-coded org data).
     """
 
-    # Fail closed
+    # Fail closed if domain not configured
     if not TARGET_DOMAIN_BYTES:
         return {"emails": [], "creds": []}
 
@@ -157,6 +170,9 @@ def extract_emails(path: str) -> dict:
     lower = path.lower()
     creds = []
 
+    # ----------------------------
+    # Archive / binary formats
+    # ----------------------------
     if lower.endswith(".pdf"):
         creds = extract_all(read_pdf(path))
 
@@ -169,12 +185,15 @@ def extract_emails(path: str) -> dict:
     elif lower.endswith(".7z"):
         creds = extract_all(read_7z(path))
 
+    # ----------------------------
+    # Large Telegram text dumps
+    # ----------------------------
     else:
         chunk_count = 0
         for chunk in read_raw_stream(path):
             chunk_count += 1
 
-            # 🔥 domain gate
+            # Domain gate (huge performance win)
             if TARGET_DOMAIN_BYTES not in chunk.lower():
                 continue
 
@@ -186,7 +205,9 @@ def extract_emails(path: str) -> dict:
                     flush=True
                 )
 
+    # ----------------------------
     # Deduplicate + scope
+    # ----------------------------
     dedup = {}
     for email, password in creds:
         if email.endswith(TARGET_DOMAIN):
