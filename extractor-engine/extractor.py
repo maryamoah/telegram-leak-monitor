@@ -37,11 +37,30 @@ URL_CRED_RE = re.compile(
 # =========================================================
 
 def read_raw(path: str, limit: int = 10_000_000) -> bytes:
+    """
+    Legacy raw reader (kept for compatibility, NOT used for large text files)
+    """
     try:
         with open(path, "rb") as f:
             return f.read(limit)
     except Exception:
         return b""
+
+
+def read_raw_stream(path: str, chunk_size: int = 4_000_000):
+    """
+    Stream large text files safely in chunks.
+    Prevents missing leaks beyond first N bytes.
+    """
+    try:
+        with open(path, "rb") as f:
+            while True:
+                chunk = f.read(chunk_size)
+                if not chunk:
+                    break
+                yield chunk
+    except Exception:
+        return
 
 
 def read_pdf(path: str) -> bytes:
@@ -167,15 +186,29 @@ def extract_emails(path: str) -> dict:
 
     lower = path.lower()
 
+    # Binary / archive formats (safe to load fully)
     if lower.endswith(".pdf"):
-        raw = read_pdf(path)
-    elif lower.endswith(".zip"):
-        raw = read_zip(path)
-    elif lower.endswith(".rar"):
-        raw = read_rar(path)
-    elif lower.endswith(".7z"):
-        raw = read_7z(path)
-    else:
-        raw = read_raw(path)
+        return extract_all(read_pdf(path))
 
-    return extract_all(raw)
+    if lower.endswith(".zip"):
+        return extract_all(read_zip(path))
+
+    if lower.endswith(".rar"):
+        return extract_all(read_rar(path))
+
+    if lower.endswith(".7z"):
+        return extract_all(read_7z(path))
+
+    # 🔥 Stream large text files (.txt, .log, .csv, etc.)
+    emails = set()
+    creds = []
+
+    for chunk in read_raw_stream(path):
+        res = extract_all(chunk)
+        emails.update(res.get("emails", []))
+        creds.extend(res.get("creds", []))
+
+    return {
+        "emails": sorted(emails),
+        "creds": creds
+    }
