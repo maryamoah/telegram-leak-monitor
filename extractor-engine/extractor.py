@@ -9,15 +9,26 @@ from PyPDF2 import PdfReader
 # REGEX DEFINITIONS (bytes-safe)
 # =========================================================
 
+# Standard email
 EMAIL_RE = re.compile(
     rb"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
     re.IGNORECASE
 )
 
+# email:password
 CRED_RE = re.compile(
     rb"(?P<user>[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})"
     rb"(?P<sep>[:|,;])"
-    rb"(?P<pw>[^\s]{1,50})",
+    rb"(?P<pw>[^\s]{1,100})",
+    re.IGNORECASE
+)
+
+# url:email:password   (Telegram combo-style leaks)
+URL_CRED_RE = re.compile(
+    rb"https?://[^\s:]+:"
+    rb"(?P<user>[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})"
+    rb":"
+    rb"(?P<pw>[^\s]{1,200})",
     re.IGNORECASE
 )
 
@@ -103,13 +114,31 @@ def extract_all(raw: bytes) -> dict:
     emails = set()
     creds = []
 
-    # --- Emails ---
+    # -----------------------------------------------------
+    # Email extraction
+    # -----------------------------------------------------
     for e in EMAIL_RE.findall(raw):
-        emails.add(e.decode(errors="ignore"))
+        emails.add(e.decode(errors="ignore").lower())
 
-    # --- Credentials ---
+    # -----------------------------------------------------
+    # Credentials: email:password
+    # -----------------------------------------------------
     for m in CRED_RE.finditer(raw):
-        email = m.group("user").decode(errors="ignore")
+        email = m.group("user").decode(errors="ignore").lower()
+        password = m.group("pw").decode(errors="ignore")
+
+        creds.append({
+            "email": email,
+            "password": password
+        })
+
+        emails.add(email)
+
+    # -----------------------------------------------------
+    # Credentials: url:email:password (Telegram combo dumps)
+    # -----------------------------------------------------
+    for m in URL_CRED_RE.finditer(raw):
+        email = m.group("user").decode(errors="ignore").lower()
         password = m.group("pw").decode(errors="ignore")
 
         creds.append({
@@ -125,7 +154,7 @@ def extract_all(raw: bytes) -> dict:
     }
 
 # =========================================================
-# PUBLIC ENTRYPOINT (EXPECTED BY app.py)
+# PUBLIC ENTRYPOINT (EXPECTED BY filter-engine/app.py)
 # =========================================================
 
 def extract_emails(path: str) -> dict:
