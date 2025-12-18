@@ -6,24 +6,36 @@ import rarfile
 from PyPDF2 import PdfReader
 
 # =========================================================
+# CONFIG (PUBLIC-SAFE)
+# =========================================================
+
+# Domain is injected at runtime, NOT hard-coded
+TARGET_DOMAIN = os.getenv("TARGET_DOMAIN", "").strip().lower()
+
+# Fail closed if not configured
+if TARGET_DOMAIN:
+    TARGET_DOMAIN_BYTES = f"@{TARGET_DOMAIN}".encode()
+else:
+    TARGET_DOMAIN_BYTES = None
+
+STREAM_CHUNK_SIZE = 4_000_000  # 4 MB
+
+# =========================================================
 # REGEX DEFINITIONS (bytes-safe)
 # =========================================================
 
-# Standard email
 EMAIL_RE = re.compile(
     rb"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
     re.IGNORECASE
 )
 
-# email:password
 CRED_RE = re.compile(
     rb"(?P<user>[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})"
-    rb"(?P<sep>[:|,;])"
+    rb"[:|,;]"
     rb"(?P<pw>[^\s]{1,100})",
     re.IGNORECASE
 )
 
-# url:email:password   (Telegram combo-style leaks)
 URL_CRED_RE = re.compile(
     rb"https?://[^\s:]+:"
     rb"(?P<user>[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})"
@@ -33,29 +45,14 @@ URL_CRED_RE = re.compile(
 )
 
 # =========================================================
-# FILE READERS (binary-safe)
+# FILE READERS
 # =========================================================
 
-def read_raw(path: str, limit: int = 10_000_000) -> bytes:
-    """
-    Legacy raw reader (kept for compatibility, NOT used for large text files)
-    """
-    try:
-        with open(path, "rb") as f:
-            return f.read(limit)
-    except Exception:
-        return b""
-
-
-def read_raw_stream(path: str, chunk_size: int = 4_000_000):
-    """
-    Stream large text files safely in chunks.
-    Prevents missing leaks beyond first N bytes.
-    """
+def read_raw_stream(path: str):
     try:
         with open(path, "rb") as f:
             while True:
-                chunk = f.read(chunk_size)
+                chunk = f.read(STREAM_CHUNK_SIZE)
                 if not chunk:
                     break
                 yield chunk
@@ -117,101 +114,91 @@ def read_7z(path: str) -> bytes:
     return buf
 
 # =========================================================
-# CORE EXTRACTION LOGIC
+# CORE EXTRACTION
 # =========================================================
 
-def extract_all(raw: bytes) -> dict:
-    """
-    Extract:
-      - emails
-      - credential pairs (email + password)
-    """
-
+def extract_all(raw: bytes) -> list:
     if not isinstance(raw, (bytes, bytearray)):
-        raw = b""
+        return []
 
-    emails = set()
-    creds = []
+    found = []
 
-    # -----------------------------------------------------
-    # Email extraction
-    # -----------------------------------------------------
-    for e in EMAIL_RE.findall(raw):
-        emails.add(e.decode(errors="ignore").lower())
-
-    # -----------------------------------------------------
-    # Credentials: email:password
-    # -----------------------------------------------------
     for m in CRED_RE.finditer(raw):
-        email = m.group("user").decode(errors="ignore").lower()
-        password = m.group("pw").decode(errors="ignore")
+        found.append((
+            m.group("user").decode(errors="ignore").lower(),
+            m.group("pw").decode(errors="ignore")
+        ))
 
-        creds.append({
-            "email": email,
-            "password": password
-        })
-
-        emails.add(email)
-
-    # -----------------------------------------------------
-    # Credentials: url:email:password (Telegram combo dumps)
-    # -----------------------------------------------------
     for m in URL_CRED_RE.finditer(raw):
-        email = m.group("user").decode(errors="ignore").lower()
-        password = m.group("pw").decode(errors="ignore")
+        found.append((
+            m.group("user").decode(errors="ignore").lower(),
+            m.group("pw").decode(errors="ignore")
+        ))
 
-        creds.append({
-            "email": email,
-            "password": password
-        })
-
-        emails.add(email)
-
-    return {
-        "emails": sorted(emails),
-        "creds": creds
-    }
+    return found
 
 # =========================================================
-# PUBLIC ENTRYPOINT (EXPECTED BY filter-engine/app.py)
+# PUBLIC ENTRYPOINT
 # =========================================================
 
 def extract_emails(path: str) -> dict:
+    """
+    Domain-gated, streaming-safe extractor.
+    Public-repo safe (no hard-coded org info).
+    """
+
+    # Fail closed
+    if not TARGET_DOMAIN_BYTES:
+        return {"emails": [], "creds": []}
+
     if not path or not os.path.exists(path):
         return {"emails": [], "creds": []}
 
     lower = path.lower()
-
-    if lower.endswith(".pdf"):
-        return extract_all(read_pdf(path))
-    if lower.endswith(".zip"):
-        return extract_all(read_zip(path))
-    if lower.endswith(".rar"):
-        return extract_all(read_rar(path))
-    if lower.endswith(".7z"):
-        return extract_all(read_7z(path))
-
-    emails = set()
     creds = []
 
-    chunk_count = 0
+    if lower.endswith(".pdf"):
+        creds = extract_all(read_pdf(path))
 
-    for chunk in read_raw_stream(path):
-        chunk_count += 1
+    elif lower.endswith(".zip"):
+        creds = extract_all(read_zip(path))
 
-        res = extract_all(chunk)
-        emails.update(res["emails"])
-        creds.extend(res["creds"])
+    elif lower.endswith(".rar"):
+        creds = extract_all(read_rar(path))
 
-        # 🔍 progress every ~20MB
-        if chunk_count % 5 == 0:
-            print(
-                f"[extractor] chunks={chunk_count} "
-                f"emails={len(emails)} creds={len(creds)}",
-                flush=True
-            )
+    elif lower.endswith(".7z"):
+        creds = extract_all(read_7z(path))
+
+    else:
+        chunk_count = 0
+        for chunk in read_raw_stream(path):
+            chunk_count += 1
+
+            # 🔥 domain gate
+            if TARGET_DOMAIN_BYTES not in chunk.lower():
+                continue
+
+            creds.extend(extract_all(chunk))
+
+            if chunk_count % 5 == 0:
+                print(
+                    f"[extractor] chunks={chunk_count} matches={len(creds)}",
+                    flush=True
+                )
+
+    # Deduplicate + scope
+    dedup = {}
+    for email, password in creds:
+        if email.endswith(TARGET_DOMAIN):
+            dedup[(email, password)] = {
+                "email": email,
+                "password": password
+            }
+
+    final_creds = list(dedup.values())
+    final_emails = sorted({c["email"] for c in final_creds})
 
     return {
-        "emails": sorted(emails),
-        "creds": creds
+        "emails": final_emails,
+        "creds": final_creds
     }
