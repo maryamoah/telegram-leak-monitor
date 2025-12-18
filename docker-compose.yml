@@ -31,6 +31,7 @@ services:
       - leak_files:/files
     environment:
       MAX_READ_BYTES: 5000000
+      SCOPE_DOMAIN: ${SCOPE_DOMAIN}
     ports:
       - "8001:8001"
     restart: unless-stopped
