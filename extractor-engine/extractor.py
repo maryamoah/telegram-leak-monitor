@@ -177,36 +177,39 @@ def extract_all(raw: bytes) -> dict:
 # =========================================================
 
 def extract_emails(path: str) -> dict:
-    """
-    Entry point used by extractor-engine/app.py
-    """
-
     if not path or not os.path.exists(path):
         return {"emails": [], "creds": []}
 
     lower = path.lower()
 
-    # Binary / archive formats (safe to load fully)
     if lower.endswith(".pdf"):
         return extract_all(read_pdf(path))
-
     if lower.endswith(".zip"):
         return extract_all(read_zip(path))
-
     if lower.endswith(".rar"):
         return extract_all(read_rar(path))
-
     if lower.endswith(".7z"):
         return extract_all(read_7z(path))
 
-    # 🔥 Stream large text files (.txt, .log, .csv, etc.)
     emails = set()
     creds = []
 
+    chunk_count = 0
+
     for chunk in read_raw_stream(path):
+        chunk_count += 1
+
         res = extract_all(chunk)
-        emails.update(res.get("emails", []))
-        creds.extend(res.get("creds", []))
+        emails.update(res["emails"])
+        creds.extend(res["creds"])
+
+        # 🔍 progress every ~20MB
+        if chunk_count % 5 == 0:
+            print(
+                f"[extractor] chunks={chunk_count} "
+                f"emails={len(emails)} creds={len(creds)}",
+                flush=True
+            )
 
     return {
         "emails": sorted(emails),
