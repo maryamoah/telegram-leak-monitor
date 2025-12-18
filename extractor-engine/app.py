@@ -1,8 +1,7 @@
 from flask import Flask, request, jsonify
-import os
 import requests
-
-from extractor import extract_all   # <— this now EXISTS
+import os
+from extractor import extract_emails
 
 app = Flask(__name__)
 
@@ -11,43 +10,32 @@ FILTER_ENDPOINT = "http://filter-engine:7000/ingest"
 
 @app.route("/extract", methods=["POST"])
 def extract():
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
+    path = data.get("filepath")
 
-    filepath = data.get("filepath")
-    text_input = data.get("text")
+    if not path or not os.path.exists(path):
+        return jsonify({"error": "Invalid file path"}), 400
 
-    if not filepath and not text_input:
-        return jsonify({"error": "Need 'filepath' or 'text'"}), 400
+    emails = extract_emails(path)
 
-    # ========= CASE 1: Extract from FILE =========
-    if filepath:
-        if not filepath.startswith("/files"):
-            return jsonify({"error": "Invalid file path"}), 400
+    payload = {
+        "emails": emails,
+        "source": path
+    }
+
+    # Forward ONLY if emails exist
+    if emails:
         try:
-            with open(filepath, "rb") as f:
-                raw = f.read()
-        except Exception:
-            return jsonify({"error": "Failed to read file"}), 400
-
-        result = extract_all(raw)
-
-    # ========= CASE 2: Extract from TEXT =========
-    elif text_input:
-        raw = text_input.encode(errors="ignore")
-        result = extract_all(raw)
-
-    # ---------- Forward to filter-engine ----------
-    if result.get("emails"):
-        try:
-            resp = requests.post(FILTER_ENDPOINT, json=result, timeout=10)
-            print(f"[EXTRACTOR] Sent {len(result['emails'])} emails → filter-engine "
-                  f"(status {resp.status_code})")
+            resp = requests.post(FILTER_ENDPOINT, json=payload, timeout=10)
+            print(
+                f"[extractor] Sent {len(emails)} emails → filter (status {resp.status_code})",
+                flush=True
+            )
         except Exception as e:
-            print(f"[EXTRACTOR ERROR] Failed forwarding: {e}")
+            print("[extractor] Forward error:", e, flush=True)
 
-    return jsonify(result), 200
+    return jsonify(payload), 200
 
 
 if __name__ == "__main__":
-    print("Extractor engine running on :8001")
     app.run(host="0.0.0.0", port=8001)
