@@ -22,11 +22,13 @@ STREAM_CHUNK_SIZE = 4_000_000  # 4 MB
 # REGEX DEFINITIONS (bytes-safe)
 # =========================================================
 
+# Standard email
 EMAIL_RE = re.compile(
     rb"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
     re.IGNORECASE
 )
 
+# email:password
 CRED_RE = re.compile(
     rb"(?P<user>[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})"
     rb"[:|,;]"
@@ -34,8 +36,18 @@ CRED_RE = re.compile(
     re.IGNORECASE
 )
 
+# http(s)://service:email:password
 URL_CRED_RE = re.compile(
     rb"https?://[^\s:]+:"
+    rb"(?P<user>[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})"
+    rb":"
+    rb"(?P<pw>[^\s]{1,200})",
+    re.IGNORECASE
+)
+
+# service/path:email:password   (Telegram combo-style, no scheme)
+GENERIC_CRED_RE = re.compile(
+    rb"(?P<prefix>[^\s:]{3,}):"
     rb"(?P<user>[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})"
     rb":"
     rb"(?P<pw>[^\s]{1,200})",
@@ -130,7 +142,10 @@ def read_7z(path: str) -> bytes:
 # =========================================================
 
 def extract_all(raw: bytes) -> list:
-    """Extract (email, password) tuples from raw bytes"""
+    """
+    Extract (email, password) tuples from raw bytes.
+    Handles multiple real-world leak formats.
+    """
     if not isinstance(raw, (bytes, bytearray)):
         return []
 
@@ -143,6 +158,12 @@ def extract_all(raw: bytes) -> list:
         ))
 
     for m in URL_CRED_RE.finditer(raw):
+        found.append((
+            m.group("user").decode(errors="ignore").lower(),
+            m.group("pw").decode(errors="ignore")
+        ))
+
+    for m in GENERIC_CRED_RE.finditer(raw):
         found.append((
             m.group("user").decode(errors="ignore").lower(),
             m.group("pw").decode(errors="ignore")
