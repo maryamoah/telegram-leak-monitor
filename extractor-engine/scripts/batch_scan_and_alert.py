@@ -1,5 +1,9 @@
 import sys
 import os
+
+# ⬇️ MUST be before importing extractor
+sys.path.insert(0, "/app")
+
 import glob
 import json
 import time
