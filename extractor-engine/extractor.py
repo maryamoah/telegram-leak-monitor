@@ -6,15 +6,8 @@ import rarfile
 from PyPDF2 import PdfReader
 
 # =========================================================
-# CONFIG (PUBLIC SAFE)
+# CONFIG
 # =========================================================
-
-TARGET_DOMAIN = os.getenv("TARGET_DOMAIN", "").strip().lower()
-
-if TARGET_DOMAIN:
-    TARGET_DOMAIN_BYTES = f"@{TARGET_DOMAIN}".encode()
-else:
-    TARGET_DOMAIN_BYTES = None
 
 STREAM_CHUNK_SIZE = 4_000_000  # 4 MB
 
@@ -22,7 +15,6 @@ STREAM_CHUNK_SIZE = 4_000_000  # 4 MB
 # REGEX DEFINITIONS (bytes-safe)
 # =========================================================
 
-# Standard email
 EMAIL_RE = re.compile(
     rb"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
     re.IGNORECASE
@@ -45,9 +37,9 @@ URL_CRED_RE = re.compile(
     re.IGNORECASE
 )
 
-# service/path:email:password   (Telegram combo-style, no scheme)
+# service/path:email:password (Telegram combo-style, no scheme)
 GENERIC_CRED_RE = re.compile(
-    rb"(?P<prefix>[^\s:]{3,}):"
+    rb"[^\s:]{3,}:"
     rb"(?P<user>[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})"
     rb":"
     rb"(?P<pw>[^\s]{1,200})",
@@ -62,7 +54,6 @@ def read_raw(path: str, limit: int = 10_000_000) -> bytes:
     """
     Legacy compatibility function.
     Kept so extractor-engine/app.py imports do not break.
-    NOT used for large text processing.
     """
     try:
         with open(path, "rb") as f:
@@ -72,7 +63,7 @@ def read_raw(path: str, limit: int = 10_000_000) -> bytes:
 
 
 def read_raw_stream(path: str):
-    """Stream large text files safely"""
+    """Stream large text files safely."""
     try:
         with open(path, "rb") as f:
             while True:
@@ -144,7 +135,7 @@ def read_7z(path: str) -> bytes:
 def extract_all(raw: bytes) -> list:
     """
     Extract (email, password) tuples from raw bytes.
-    Handles multiple real-world leak formats.
+    Scope-agnostic by design.
     """
     if not isinstance(raw, (bytes, bytearray)):
         return []
@@ -177,13 +168,9 @@ def extract_all(raw: bytes) -> list:
 
 def extract_emails(path: str) -> dict:
     """
-    Domain-gated, streaming-safe extractor.
-    Public GitHub safe (no hard-coded org data).
+    Streaming-safe, scope-agnostic extractor.
+    Downstream components decide scope and alerting.
     """
-
-    # Fail closed if domain not configured
-    if not TARGET_DOMAIN_BYTES:
-        return {"emails": [], "creds": []}
 
     if not path or not os.path.exists(path):
         return {"emails": [], "creds": []}
@@ -213,29 +200,23 @@ def extract_emails(path: str) -> dict:
         chunk_count = 0
         for chunk in read_raw_stream(path):
             chunk_count += 1
-
-            # Domain gate (huge performance win)
-            if TARGET_DOMAIN_BYTES not in chunk.lower():
-                continue
-
             creds.extend(extract_all(chunk))
 
             if chunk_count % 5 == 0:
                 print(
-                    f"[extractor] chunks={chunk_count} matches={len(creds)}",
+                    f"[extractor] chunks={chunk_count} extracted={len(creds)}",
                     flush=True
                 )
 
     # ----------------------------
-    # Deduplicate + scope
+    # Deduplicate ONLY
     # ----------------------------
     dedup = {}
     for email, password in creds:
-        if email.endswith(TARGET_DOMAIN):
-            dedup[(email, password)] = {
-                "email": email,
-                "password": password
-            }
+        dedup[(email, password)] = {
+            "email": email,
+            "password": password
+        }
 
     final_creds = list(dedup.values())
     final_emails = sorted({c["email"] for c in final_creds})
