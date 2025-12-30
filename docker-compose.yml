@@ -31,7 +31,7 @@ services:
       - leak_files:/files
     environment:
       MAX_READ_BYTES: 5000000
-      SCOPE_DOMAIN: ${SCOPE_DOMAIN}
+      TARGET_DOMAIN: ${TARGET_DOMAIN}
     ports:
       - "8001:8001"
     restart: unless-stopped
@@ -41,8 +41,6 @@ services:
     build: ./filter-engine
     container_name: filter-engine
     environment:
-      SCOPE_DOMAIN: ${SCOPE_DOMAIN}
-      SCOPE_EMAIL: ${SCOPE_EMAIL}
       N8N_WEBHOOK: ${N8N_WEBHOOK}
     ports:
       - "7000:7000"
