@@ -1,1 +1,1 @@
-*/15 * * * * TARGET_DOMAIN=example.edu python /app/scripts/batch_scan_and_alert.py
+*/15 * * * * python /app/scripts/batch_scan_and_alert.py
