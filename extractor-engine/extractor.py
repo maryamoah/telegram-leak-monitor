@@ -10,9 +10,10 @@ from PyPDF2 import PdfReader
 # =========================================================
 
 STREAM_CHUNK_SIZE = 4_000_000  # 4 MB
+TARGET_DOMAIN = os.getenv("TARGET_DOMAIN")
 
 # =========================================================
-# REGEX DEFINITIONS (bytes-safe)
+# REGEX DEFINITIONS (bytes-safe extractors)
 # =========================================================
 
 EMAIL_RE = re.compile(
@@ -20,7 +21,6 @@ EMAIL_RE = re.compile(
     re.IGNORECASE
 )
 
-# email:password
 CRED_RE = re.compile(
     rb"(?P<user>[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})"
     rb"[:|,;]"
@@ -28,7 +28,6 @@ CRED_RE = re.compile(
     re.IGNORECASE
 )
 
-# http(s)://service:email:password
 URL_CRED_RE = re.compile(
     rb"https?://[^\s:]+:"
     rb"(?P<user>[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})"
@@ -37,7 +36,6 @@ URL_CRED_RE = re.compile(
     re.IGNORECASE
 )
 
-# service/path:email:password (Telegram combo-style, no scheme)
 GENERIC_CRED_RE = re.compile(
     rb"[^\s:]{3,}:"
     rb"(?P<user>[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})"
@@ -47,23 +45,43 @@ GENERIC_CRED_RE = re.compile(
 )
 
 # =========================================================
+# VALIDATION HELPERS
+# =========================================================
+
+EMAIL_VALIDATE_RE = re.compile(
+    r"^[a-zA-Z0-9][a-zA-Z0-9._%+-]{0,63}"
+    r"@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
+)
+
+def normalize_email(email: str) -> str:
+    return email.lstrip("+-._")
+
+def is_valid_email(email: str) -> bool:
+    if len(email) > 254:
+        return False
+    return bool(EMAIL_VALIDATE_RE.match(email))
+
+def is_msisdn_email(email: str) -> bool:
+    local = email.split("@", 1)[0]
+    return local.startswith("+") and local[1:].isdigit()
+
+def domain_allowed(email: str) -> bool:
+    if not TARGET_DOMAIN:
+        return True
+    return email.endswith("@" + TARGET_DOMAIN.lower())
+
+# =========================================================
 # FILE READERS
 # =========================================================
 
 def read_raw(path: str, limit: int = 10_000_000) -> bytes:
-    """
-    Legacy compatibility function.
-    Kept so extractor-engine/app.py imports do not break.
-    """
     try:
         with open(path, "rb") as f:
             return f.read(limit)
     except Exception:
         return b""
 
-
 def read_raw_stream(path: str):
-    """Stream large text files safely."""
     try:
         with open(path, "rb") as f:
             while True:
@@ -74,7 +92,6 @@ def read_raw_stream(path: str):
     except Exception:
         return
 
-
 def read_pdf(path: str) -> bytes:
     try:
         reader = PdfReader(path)
@@ -84,7 +101,6 @@ def read_pdf(path: str) -> bytes:
         return text.encode(errors="ignore")
     except Exception:
         return b""
-
 
 def read_zip(path: str) -> bytes:
     buf = b""
@@ -99,7 +115,6 @@ def read_zip(path: str) -> bytes:
         pass
     return buf
 
-
 def read_rar(path: str) -> bytes:
     buf = b""
     try:
@@ -112,7 +127,6 @@ def read_rar(path: str) -> bytes:
     except Exception:
         pass
     return buf
-
 
 def read_7z(path: str) -> bytes:
     buf = b""
@@ -133,10 +147,6 @@ def read_7z(path: str) -> bytes:
 # =========================================================
 
 def extract_all(raw: bytes) -> list:
-    """
-    Extract (email, password) tuples from raw bytes.
-    Scope-agnostic by design.
-    """
     if not isinstance(raw, (bytes, bytearray)):
         return []
 
@@ -167,20 +177,12 @@ def extract_all(raw: bytes) -> list:
 # =========================================================
 
 def extract_emails(path: str) -> dict:
-    """
-    Streaming-safe, scope-agnostic extractor.
-    Downstream components decide scope and alerting.
-    """
-
     if not path or not os.path.exists(path):
         return {"emails": [], "creds": []}
 
     lower = path.lower()
     creds = []
 
-    # ----------------------------
-    # Archive / binary formats
-    # ----------------------------
     if lower.endswith(".pdf"):
         creds = extract_all(read_pdf(path))
 
@@ -193,14 +195,13 @@ def extract_emails(path: str) -> dict:
     elif lower.endswith(".7z"):
         creds = extract_all(read_7z(path))
 
-    # ----------------------------
-    # Large Telegram text dumps
-    # ----------------------------
     else:
         chunk_count = 0
         for chunk in read_raw_stream(path):
             chunk_count += 1
-            creds.extend(extract_all(chunk))
+            chunk_creds = extract_all(chunk)
+            if chunk_creds:
+                creds.extend(chunk_creds)
 
             if chunk_count % 5 == 0:
                 print(
@@ -208,11 +209,20 @@ def extract_emails(path: str) -> dict:
                     flush=True
                 )
 
-    # ----------------------------
-    # Deduplicate ONLY
-    # ----------------------------
     dedup = {}
+
     for email, password in creds:
+        email = normalize_email(email)
+
+        if not is_valid_email(email):
+            continue
+
+        if is_msisdn_email(email):
+            continue
+
+        if not domain_allowed(email):
+            continue
+
         dedup[(email, password)] = {
             "email": email,
             "password": password
